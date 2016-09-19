@@ -11,7 +11,7 @@ if(ANDROID_NDK)
 	set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${v4l2-lib_BINARY_DIR}/bin/${ANDROID_ABI})
 	set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${v4l2-lib_BINARY_DIR}/libs/${ANDROID_ABI})
 	set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${v4l2-lib_BINARY_DIR}/libs/${ANDROID_ABI})
-else(ANDROID_NDK)
+else()
 	if("${BCV_ENV_EXPORTED}" STREQUAL "")
 	#". setup.sh " to export .config to CMAKE build system
 	#include(${BCV_SOURCE_DIR}/cmake/CVEnvImport.cmake)
@@ -42,7 +42,7 @@ else(ANDROID_NDK)
 	set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${v4l2-lib_BINARY_DIR}/libs/${TARGET_ARCH})
 	set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${v4l2-lib_BINARY_DIR}/libs/${TARGET_ARCH})
 
-endif(ANDROID_NDK)
+endif()
 #build a static lib
 ADD_LIBRARY(v4l2 STATIC
 	Webcam.cpp
