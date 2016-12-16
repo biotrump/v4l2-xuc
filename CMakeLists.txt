@@ -50,5 +50,8 @@ ADD_LIBRARY(v4l2 STATIC
 	capture-v4l2.c
 	)
 
+add_executable(v4l2-xu
+		v4l2-xu.c
+	)
 #dynamic or static link to dependent openCV libs
 #TARGET_LINK_LIBRARIES( v4l2-lib ${OpenCV_LIBS} )
