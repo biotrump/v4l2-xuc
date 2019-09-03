@@ -611,7 +611,6 @@ Device Status:     0x0000
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <getopt.h>             /* getopt_long() */
 #include <fcntl.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -620,41 +619,6 @@ Device Status:     0x0000
 #include <sys/mman.h>
 #include <linux/videodev2.h>	//V4L2 definitions, /include/uapi/linux/videodev2.h
 #include <linux/uvcvideo.h>
-#include <linux/usb/video.h>
-
-#define	VIDEO_DEVICE	"/dev/video0"
-
-char device_name[1024];
-uint32_t g_led=0;
-uint32_t g_pwm=0;
-int g_verbose=0;
-
-static void usage(FILE *fp, int argc, char **argv)
-{
-	fprintf(fp,
-		 "Usage: %s [options]\n\n"
-		 "Options:\n"
-		 "-d | --device        Video device name /dev/video0\n"
-		 "-h | --help          Print this message\n"
-		 "-l | --led           0x01 850nm on or 0x02:940nm on\n"
-		 "-p | --pwm           pwm 0-255\n"
-		 "-v | --verbose       Verbose output\n"
-		 "",
-		 argv[0]);
-}
-
-static const char short_options[] = "d:hl:p:v";
-
-static const struct option
-long_options[] = {
-	{ "device", required_argument, NULL, 'd' },
-	{ "help",   no_argument,       NULL, 'h' },
-	{ "led",   required_argument,  NULL, 'l' },
-	{ "pwm",   required_argument,       NULL, 'p' },
-	{ "verbose", no_argument,      NULL, 'v' },
-	{ 0, 0, 0, 0 }
-};
-
 
 static int xioctl(int fd, int request, void *arg)
 {
@@ -815,339 +779,172 @@ void xuc_err(void)
         iExtension              0 
 */
 
-/**@brief Query the size of the control in bytes.
- * @return : <0 error, >0 the size of the control
- */
-int xuc_UVC_GET_LEN(int fd, int unit_id)
-{
-	int size = -1;
-	struct uvc_xu_control_query xuc;
-	uint8_t data[16];
-	memset(data, 0, sizeof(data));
-	//UVC_GET_LEN : Query the size of the control in bytes.
-	xuc.query=UVC_GET_LEN;	//0x85;
-	xuc.selector=0x05;		//cs,	Control selector
-	xuc.unit=unit_id;			//xuid,	Extension unit ID
-	xuc.size=02;			//Control data size (in bytes)
-	xuc.data=data;			//Control value
-	if (-1 == xioctl(fd, UVCIOC_CTRL_QUERY, &xuc)){
-		perror("UVCIOC_CTRL_QUERY :UVC_GET_LEN");
-		printf("%s:errno=%d\n",__func__, errno);
-		xuc_err();
-		goto exit;
-	}
-	size= data[0] | data[1] << 8;
-exit:
-	printf("%s: UVC_GET_LEN(0x%x): size=%d\n",__func__, UVC_GET_LEN, size);
-	return size;
-}
-
-/** @brief UVC_GET_INFO : Query the control information bitmap, 
- * which indicates whether get/set requests are supported.
- * to find out whether UVC_GET_CUR or UVC_SET_CUR are valid requests for a given control, 
- * a UVC_GET_INFO request should be made. 
- * The bits 0 (GET supported) and 1 (SET supported) of the resulting byte indicate which requests are valid.
- *
- * @param[IN] size : return from UVC_GET_LEN
- * @return : -1 failed,
- * 	The bits 0 (GET supported) and 1 (SET supported) of the resulting byte indicate which requests are valid.
- */
-uint32_t xuc_UVC_GET_INFO(int fd, int unit_id, int size)
-{
-	uint32_t u32=-1;
-	struct uvc_xu_control_query xuc;
-	uint8_t data[size];
-
-	//UVC_GET_INFO : Query the control information bitmap, which indicates whether get/set requests are supported.
-	memset(data, 0, sizeof(data));
-	xuc.query=UVC_GET_INFO;	//0x86;
-	xuc.selector=0x05;		//cs,	Control selector
-	xuc.unit=unit_id;			//xuid,	Extension unit ID
-	xuc.size=size;			//Control data size (in bytes)
-	xuc.data=data;			//Control value
-	if (-1 == xioctl(fd, UVCIOC_CTRL_QUERY, &xuc)){
-		perror("UVCIOC_CTRL_QUERY :UVC_GET_INFO");
-		printf("%s:errno=%d\n",__func__, errno);
-		xuc_err();
-		goto exit;
-	}
-	u32 = data[0];
-exit:
-	printf("%s: UVC_GET_INFO(0x%x): u32=0x%x\n",__func__, UVC_GET_INFO, u32);	
-	return u32;
-}
-
-/** @brief UVC_GET_MIN : Obtain the minimum value of the control.
- * @param[IN] size : return from UVC_GET_LEN
- * @return : -1 fail, else successful
- */
-int xuc_UVC_GET_MIN(int fd, int unit_id, int size)
-{
-	int min=-1;
-	struct uvc_xu_control_query xuc;
-	uint8_t data[size];
-	//UVC_GET_MIN : Obtain the minimum value of the control.
-	memset(data, 0, sizeof(data));
-	xuc.query=UVC_GET_MIN;	//0x82;
-	xuc.selector=0x05;		//cs,	Control selector
-	xuc.unit=unit_id;			//xuid,	Extension unit ID
-	xuc.size=size;			//Control data size (in bytes)
-	xuc.data=data;			//Control value
-	if (-1 == xioctl(fd, UVCIOC_CTRL_QUERY, &xuc)){
-		perror("UVCIOC_CTRL_QUERY :UVC_GET_MIN");
-		printf("%s:errno=%d\n",__func__, errno);
-		xuc_err();
-		goto exit;
-	}
-	min = data[0];	//only first byte is supported.
-exit:
-	printf("%s: UVC_GET_MIN(0x%x): %d\n",__func__, UVC_GET_MIN, min);
-	return min;
-}
-
-/** @brief UVC_GET_MAX : Obtain the maximum value of the control.
- * @param[IN] size : return from UVC_GET_LEN
- * @return : -1 fail, else successful
- */
-int xuc_UVC_GET_MAX(int fd, int unit_id, int size)
-{
-	int max=-1;
-	struct uvc_xu_control_query xuc;
-	uint8_t data[size];
-	//UVC_GET_MAX : Obtain the minimum value of the control.
-	memset(data, 0, sizeof(data));
-	xuc.query=UVC_GET_MAX;	//0x83;
-	xuc.selector=0x05;		//cs,	Control selector
-	xuc.unit=unit_id;			//xuid,	Extension unit ID
-	xuc.size=size;			//Control data size (in bytes)
-	xuc.data=data;			//Control value
-	if (-1 == xioctl(fd, UVCIOC_CTRL_QUERY, &xuc)){
-		perror("UVCIOC_CTRL_QUERY :UVC_GET_MAX");
-		printf("%s:errno=%d\n",__func__, errno);
-		xuc_err();
-		goto exit;
-	}
-	max = data[0];	//only first byte is supported.
-exit:
-	printf("%s: UVC_GET_MAX(0x%x): %d\n",__func__, UVC_GET_MAX, max);
-	return max;
-}
-
-/** @brief UVC_GET_DEF : Obtain the default value of the control.
- * @param[IN] size : return from UVC_GET_LEN
- * @return : -1 fail, else successful
- */
-int xuc_UVC_GET_DEF(int fd, int unit_id, int size)
-{
-	int def=-1;
-	struct uvc_xu_control_query xuc;
-	uint8_t data[size];
-	//UVC_GET_DEF : Obtain the default value of the control.
-	memset(data, 0, sizeof(data));
-	xuc.query=UVC_GET_DEF;	//0x87;
-	xuc.selector=0x05;		//cs,	Control selector
-	xuc.unit=unit_id;			//xuid,	Extension unit ID
-	xuc.size=size;			//Control data size (in bytes)
-	xuc.data=data;			//Control value
-	if (-1 == xioctl(fd, UVCIOC_CTRL_QUERY, &xuc)){
-		perror("UVCIOC_CTRL_QUERY :UVC_GET_DEF");
-		printf("%s:errno=%d\n",__func__, errno);
-		xuc_err();
-		goto exit;
-	}
-	def = data[0];	//only first byte is supported.
-exit:
-	printf("%s: UVC_GET_DEF(0x%x): %d\n",__func__, UVC_GET_DEF, def);
-	return def;
-}
-
-/** @brief UVC_GET_CUR : Obtain the current value of the control.
- * @param[IN] size : return from UVC_GET_LEN
- * @return : -1 error, else current value
- */
-int xuc_UVC_GET_CUR(int fd, int unit_id, int size)
-{
-	int cur=-1;
-	struct uvc_xu_control_query xuc;
-	uint8_t data[size];
-
-	//UVC_GET_CUR is supported.
-	//UVC_GET_CUR : Obtain the current value of the control.
-	memset(data, 0, sizeof(data));
-	xuc.query=UVC_GET_CUR;	//0x81;Obtain the current value of the control
-	xuc.selector=0x05;	//cs,	Control selector
-	xuc.unit=unit_id;		//xuid,	Extension unit ID
-	xuc.size=size;		//Control data size (in bytes)
-	xuc.data=data;			//Control value
-	if (-1 == xioctl(fd, UVCIOC_CTRL_QUERY, &xuc)){
-		perror("UVCIOC_CTRL_QUERY :UVC_GET_CUR");
-		printf("%s:errno=%d\n",__func__, errno);
-		xuc_err();
-		goto exit;
-	}
-	cur = data[0];
-exit:
-	printf("%s UVC_GET_CUR(0x%x) : %d\n",__func__, UVC_GET_CUR, cur);
-	return cur;
-}
-
-/** @brief UVC_SET_CUR
- * return : -1 failed,
- */
-int xuc_UVC_SET_CUR(int fd, int unit_id, int size, uint8_t data[])
-{
-	int cur = -1;
-	struct uvc_xu_control_query xuc;
-
-	//UVC_SET_CUR	Update the value of the control.
-	xuc.query=UVC_SET_CUR;		//0x01;
-	xuc.selector=0x05;	//cs,	Control selector
-	xuc.unit=unit_id;		//xuid,	Extension unit ID
-	xuc.size=size;		//	Control data size (in bytes)
-	xuc.data=data;			//Control value
-	if (-1 == xioctl(fd, UVCIOC_CTRL_QUERY, &xuc)){
-		perror("UVCIOC_CTRL_QUERY :UVC_SET_CUR");
-		printf("%s:errno=%d\n",__func__, errno);
-		xuc_err();
-		goto exit;
-	}
-	printf("%s: UVC_SET_CUR(0x%x): 0x%x 0x%x\n",__func__, UVC_SET_CUR, data[0], data[1]);
-	cur = xuc_UVC_GET_CUR(fd, unit_id, size);
-exit:
-	printf("%s: UVC_SET_CUR(0x%x): %d\n",__func__, UVC_SET_CUR, cur);
-	return cur;
-}
-
 /** @brief alcor extension unit control : Extension unit ID is "0x06"
  * @param[IN] int fd : v4l2 device handle
  * @param[IN] addr[4] : 32 bit address, but only 16bit is used
  * @param[OUT] val[4] : 32 bit data, but only 16bit is used
  * @return : bytes read if ret >0 else ret<0 fail
  */
-int set_led_pwm(int fd, uint8_t led, uint8_t pwm)
+int xuc_read(int fd, uint8_t addr[], uint8_t val[])
 {
 	int ret=-1;
 	struct uvc_xu_control_query xuc;
-
-	int unit_id=3;
-	printf("%s:unit_id = %d\n",__func__, unit_id);
-	
-	//UVC_GET_LEN : Query the size of the control in bytes.
-	int size = xuc_UVC_GET_LEN(fd, unit_id);
-	if(size < 0 ) goto exit;
-	printf(">%s: UVC_GET_LEN(0x%x): %d\n",__func__, UVC_GET_LEN, size);
-
-	uint32_t u32 = xuc_UVC_GET_INFO(fd, unit_id, size);
-	if(u32 == -1) goto exit;
-	printf(">%s: UVC_GET_INFO(0x%x): 0x%x\n",__func__, UVC_GET_INFO, u32);
-
-	int min = xuc_UVC_GET_MIN(fd, unit_id, size);
-	if(min == -1 ) goto exit;
-	printf(">%s: UVC_GET_MIN(0x%x): 0x%x\n",__func__, UVC_GET_MIN, min);
-	
-	int max = xuc_UVC_GET_MAX(fd, unit_id, size);
-	if(max == -1 ) goto exit;
-	printf(">%s: UVC_GET_MAX(0x%x): 0x%x\n",__func__, UVC_GET_MAX, max);
-
-	int def = xuc_UVC_GET_DEF(fd, unit_id, size);
-	if(def == -1 ) goto exit;
-	printf(">%s: UVC_GET_DEF(0x%x): 0x%x\n",__func__, UVC_GET_DEF, def);
-
-	if(u32 & 0x01){	//UVC_GET_CUR is supported.
-		int cur = xuc_UVC_GET_CUR(fd, unit_id, size);
-		printf(">%s: UVC_GET_CUR(0x%x) : %d\n",__func__, UVC_GET_CUR, cur);
+	uint8_t data[4];
+	printf("%s:read address @0x%x\n",__func__, *(uint32_t *)addr);
+	//GET LEN
+	memset(data,0,sizeof(data));
+#if 0
+	xuc.query=0x85;		//UVC_GET_LEN	Request code to send to the device
+	xuc.selector=0x05;	//cs,	Control selector
+	xuc.unit=0x03;		//xuid,	Extension unit ID
+	xuc.size=02;		//	Control data size (in bytes)
+	xuc.data=data;		//	Control value
+	if (-1 == xioctl(fd, UVCIOC_CTRL_QUERY, &xuc)){
+		perror("UVCIOC_CTRL_QUERY :GET LEN");
+		printf("%s:errno=%d\n",__func__, errno);
+		xuc_err();
+		goto exit;
 	}
+	printf("%s GET LEN: 0x%x 0x%x\n", __func__, data[0],data[1]);
 
-	if(u32 & (0x01u<<1) ){//UVC_SET_CUR is supported.
-		int cur = xuc_UVC_SET_CUR(fd, unit_id, size, &led);
-		printf(">%s: UVC_SET_CUR(0x%x) : %d\n",__func__, UVC_SET_CUR, cur);
+	//SET CUR
+	memset(data,0,sizeof(data));
+	//data[0]=0x35;	//gain settting
+	memcpy(data, addr, 4);
+	xuc.query=0x01;		//UVC_GET_LEN	Request code to send to the device
+	xuc.selector=0x05;	//cs,	Control selector
+	xuc.unit=0x03;		//xuid,	Extension unit ID
+	xuc.size=04;		//	Control data size (in bytes)
+	if (-1 == xioctl(fd, UVCIOC_CTRL_QUERY, &xuc)){
+		perror("UVCIOC_CTRL_QUERY :SET CUR");
+		printf("%s:errno=%d\n",__func__, errno);
+		xuc_err();
+		goto exit;
 	}
+	printf("%s SET CUR : 0x%x 0x%x\n",__func__, data[0],data[1]);
+#endif
 	
-	//PWM?
-	unit_id= 4;
-	//UVC_GET_LEN : Query the size of the control in bytes.
-	printf("\n\n%s:unit_id=%d\n", __func__, unit_id);
-	size = xuc_UVC_GET_LEN(fd, unit_id);
-	if(size < 0 ) goto exit;
-	printf(">%s: UVC_GET_LEN(0x%x): %d\n",__func__, UVC_GET_LEN, size);
-size=1;//???
-	u32 = xuc_UVC_GET_INFO(fd, unit_id, size);
-	if(u32 == -1) goto exit;
-	printf(">%s: UVC_GET_INFO(0x%x): 0x%x\n",__func__, UVC_GET_INFO, u32);
-
-	size=2;
-	min = xuc_UVC_GET_MIN(fd, unit_id, size);
-	if(min == -1 ) goto exit;
-	printf(">%s: UVC_GET_MIN(0x%x): 0x%x\n",__func__, UVC_GET_MIN, min);
-	
-	max = xuc_UVC_GET_MAX(fd, unit_id, size);
-	if(max == -1 ) goto exit;
-	printf(">%s: UVC_GET_MAX(0x%x): 0x%x\n",__func__, UVC_GET_MAX, max);
-
-	def = xuc_UVC_GET_DEF(fd, unit_id, size);
-	if(def == -1 ) goto exit;
-	printf(">%s: UVC_GET_DEF(0x%x): 0x%x\n",__func__, UVC_GET_DEF, def);
-
-	if(u32 & 0x01){	//UVC_GET_CUR is supported.
-		int cur = xuc_UVC_GET_CUR(fd, unit_id, size);
-		printf(">%s: UVC_GET_CUR(0x%x) : %d\n",__func__, UVC_GET_CUR, cur);
+	//GET LEN
+	memset(data,0,sizeof(data));
+	xuc.query=0x85;		//UVC_GET_LEN	Request code to send to the device
+	xuc.selector=0x05;	//cs,	Control selector
+	xuc.unit=0x03;		//xuid,	Extension unit ID
+	xuc.size=04;		//	Control data size (in bytes)
+	xuc.data=data;		//	Control value
+	if (-1 == xioctl(fd, UVCIOC_CTRL_QUERY, &xuc)){
+		perror("UVCIOC_CTRL_QUERY :UVC_GET_LEN");
+		printf("%s:errno=%d\n",__func__, errno);
+		xuc_err();
+		goto exit;
 	}
+	ret=4;
+	printf("%s UVC_GET_LEN: 0x%x 0x%x\n",__func__, data[0],data[1]);
 
-	if(u32 & (0x01u<<1) ){//UVC_SET_CUR is supported.
-		int cur = xuc_UVC_SET_CUR(fd, unit_id, size, &pwm);
-		printf(">%s: UVC_SET_CUR(0x%x) : %d\n",__func__, UVC_SET_CUR, cur);
+	//GET CUR
+	memset(data,0,sizeof(data));
+	xuc.query=0x81;		//UVC_GET_CUR Request code to send to the device
+	xuc.selector=0x05;	//cs,	Control selector
+	xuc.unit=0x03;		//xuid,	Extension unit ID
+	xuc.size=04;		//	Control data size (in bytes)
+	if (-1 == xioctl(fd, UVCIOC_CTRL_QUERY, &xuc)){
+		perror("UVCIOC_CTRL_QUERY :UVC_GET_CUR");
+		printf("%s:errno=%d\n",__func__, errno);
+		xuc_err();
+		goto exit;
 	}
-	
+	memcpy(val, data, 4);
+	printf("%s UVC_GET_CUR : 0x%x 0x%x 0x%x 0x%x\n",__func__,
+		   data[0], data[1], data[2], data[3]);
+exit:;
+	return ret;
+}
+
+/** @brief alcor extension unit control : Extension unit ID is "0x06"
+ * @param[IN] int fd : v4l2 device handle
+ * @param[IN] addr[4] : 32 bit address, but only 16bit is used
+ * @param[IN] val[4] : 32 bit data, but only 16bit is used
+ * @return : bytes read if ret >0 else ret<0 fail
+ */
+int xuc_write(int fd, uint8_t addr[], uint8_t val[] )
+{
+	int ret=-1;
+	struct uvc_xu_control_query xuc;
+	uint8_t data[4];
+	printf("%s:write address @0x%x\n",__func__, *(uint32_t *)addr);
+	//GET LEN
+	memset(data,0,sizeof(data));
+	xuc.query=0x85;		//UVC_GET_LEN	Request code to send to the device
+	xuc.selector=0x05;	//cs,	Control selector
+	xuc.unit=0x03;		//xuid,	Extension unit ID
+	xuc.size=02;		//	Control data size (in bytes)
+	xuc.data=data;		//	Control value
+	if (-1 == xioctl(fd, UVCIOC_CTRL_QUERY, &xuc)){
+		perror("UVCIOC_CTRL_QUERY :GET LEN");
+		printf("%s:errno=%d\n",__func__, errno);
+		xuc_err();
+		goto exit;
+	}
+	printf("%s GET LEN : 0x%x 0x%x\n",__func__, data[0],data[1]);
+
+	//SET CUR
+	memset(data,0,sizeof(data));
+	//data[0]=0x35;	//gain settting
+	memcpy(data, addr, 4);
+	xuc.query=0x01;		//UVC_GET_LEN	Request code to send to the device
+	xuc.selector=0x05;	//cs,	Control selector
+	xuc.unit=0x03;		//xuid,	Extension unit ID
+	xuc.size=04;		//	Control data size (in bytes)
+	if (-1 == xioctl(fd, UVCIOC_CTRL_QUERY, &xuc)){
+		perror("UVCIOC_CTRL_QUERY :SET CUR");
+		printf("%s:errno=%d\n",__func__, errno);
+		xuc_err();
+		goto exit;
+	}
+	printf("%s SET CUR:0x%x 0x%x\n",__func__, data[0],data[1]);
+
+	//GET LEN
+	memset(data,0,sizeof(data));
+	xuc.query=0x85;		//UVC_GET_LEN	Request code to send to the device
+	xuc.selector=0x05;	//cs,	Control selector
+	xuc.unit=0x03;		//xuid,	Extension unit ID
+	xuc.size=02;		//	Control data size (in bytes)
+	xuc.data=data;		//	Control value
+	if (-1 == xioctl(fd, UVCIOC_CTRL_QUERY, &xuc)){
+		perror("UVCIOC_CTRL_QUERY :GET LEN");
+		printf("%s:errno=%d\n",__func__, errno);
+		xuc_err();
+		goto exit;
+	}
+	printf("%s GET LEN: 0x%x 0x%x\n",__func__, data[0],data[1]);
+
+	//SET CUR
+	memcpy(data, val, sizeof(data));
+	xuc.query=0x01;		//UVC_GET_LEN	Request code to send to the device
+	xuc.selector=0x05;	//cs,	Control selector
+	xuc.unit=0x03;		//xuid,	Extension unit ID
+	xuc.size=04;		//	Control data size (in bytes)
+	if (-1 == xioctl(fd, UVCIOC_CTRL_QUERY, &xuc)){
+		perror("UVCIOC_CTRL_QUERY :GET CUR");
+		printf("%s:errno=%d\n",__func__, errno);
+		xuc_err();
+		goto exit;
+	}
+	ret=4;
+	printf("%s SET CUR WRITE : 0x%x 0x%x 0x%x 0x%x\n",__func__,
+		   data[0],data[1], data[2], data[3]);
 exit:;
 	return ret;
 }
 
 int main(int argc, char **argv)
 {
-	int fd = -1;
-	memset(device_name, 0, sizeof(device_name));
-	strncpy(device_name, VIDEO_DEVICE, strlen(VIDEO_DEVICE));
-	for (;;) {
-		int idx;
-		int c;
-
-		c = getopt_long(argc, argv,
-				short_options, long_options, &idx);
-
-		if (-1 == c)
-			break;
-
-		switch (c) {
-		case 0: /* getopt_long() flag */
-			break;
-
-		case 'd':
-			memset(device_name, 0, sizeof(device_name));
-			strncpy(device_name, optarg, strlen(optarg));
-			printf("device_name=[%s]\n", device_name);
-			break;
-
-		case 'h':
-			usage(stdout, argc, argv);
-			exit(EXIT_SUCCESS);
-		case 'l':
-			g_led = strtol(optarg, NULL, 0);
-			printf("g_led=%d\n", g_led);
-			break;
-		case 'p':
-			g_pwm = strtol(optarg, NULL, 0);
-			printf("g_pwm=%d\n", g_pwm);
-			break;
-		case 'v':
-			g_verbose = 1;
-			break;
-		default:
-			usage(stderr, argc, argv);
-			exit(EXIT_FAILURE);
-		}
+	int fd;
+	if(argc < 2){
+		printf("%s /dev/videoxx\n",argv[0]);
+		exit(0);
 	}
-	printf("Opening device_name=[%s]\n", device_name);
-	fd = open(device_name, O_RDWR);
+
+	fd = open(argv[1], O_RDWR);
 	if (fd == -1)
 	{
 		perror("Opening video device");
@@ -1156,9 +953,24 @@ int main(int argc, char **argv)
 	if(print_caps(fd))
 		return 1;
 
-	set_led_pwm(fd, g_led, g_pwm);
-	close(fd);
+	uint8_t addr[4]={0x35,0,0,0};//0x35 is gain control
+	uint8_t value[4];	//gain value
 
+	memset(value, 0,sizeof(value));
+	xuc_read(fd, addr, value);//read @0x35
+#if 0
+	memset(addr,0,sizeof(addr));
+	addr[0]=0x35;
+	memset(value,0,sizeof(value));
+	value[0]=0x11;
+	xuc_write(fd, addr, value);
+
+	memset(addr,0,sizeof(addr));
+	addr[0]=0x35;
+	memset(value,0,sizeof(value));
+	xuc_read(fd, addr, value);
+#endif
+	close(fd);
 	return 0;
 }
 
