@@ -1018,18 +1018,18 @@ exit:
 	return cur;
 }
 
-/** @brief alcor extension unit control : Extension unit ID is "0x06"
+/** @brief extension unit control : Extension unit ID is 0x03 or 0x04
  * @param[IN] int fd : v4l2 device handle
- * @param[IN] addr[4] : 32 bit address, but only 16bit is used
- * @param[OUT] val[4] : 32 bit data, but only 16bit is used
- * @return : bytes read if ret >0 else ret<0 fail
+ * @param[IN] led : 0 all off, 1: turn on 850nm, 2 : 940nm LED
+ * @param[IN] pwm : 0 - 255, not used yet
+ * @return : < 0 error, 0 successful
  */
 int set_led_pwm(int fd, uint8_t led, uint8_t pwm)
 {
 	int ret=-1;
 	struct uvc_xu_control_query xuc;
 
-	int unit_id=3;
+	int unit_id=3;	//LED on, off
 	printf("%s:unit_id = %d\n",__func__, unit_id);
 	
 	//UVC_GET_LEN : Query the size of the control in bytes.
@@ -1062,7 +1062,8 @@ int set_led_pwm(int fd, uint8_t led, uint8_t pwm)
 		int cur = xuc_UVC_SET_CUR(fd, unit_id, size, &led);
 		printf(">%s: UVC_SET_CUR(0x%x) : %d\n",__func__, UVC_SET_CUR, cur);
 	}
-	
+	ret = 0;
+#if 0
 	//PWM?
 	unit_id= 4;
 	//UVC_GET_LEN : Query the size of the control in bytes.
@@ -1097,7 +1098,7 @@ size=1;//???
 		int cur = xuc_UVC_SET_CUR(fd, unit_id, size, &pwm);
 		printf(">%s: UVC_SET_CUR(0x%x) : %d\n",__func__, UVC_SET_CUR, cur);
 	}
-	
+#endif
 exit:;
 	return ret;
 }
